@@ -22,6 +22,7 @@ export interface ProductSet {
   ingredients: string[];
   rawIngredientsText: string;
   barcode: string | null;
+  extraBarcodes?: string[];
 }
 
 type AppStep = 'upload' | 'review';

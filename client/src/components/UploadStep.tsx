@@ -9,6 +9,7 @@ interface FileGroup {
   front: File;
   ingredients: File;
   barcode: File | null;
+  extraBarcodes: File[];
 }
 
 export default function UploadStep({ onProcessed }: Props) {
@@ -16,6 +17,8 @@ export default function UploadStep({ onProcessed }: Props) {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const [barcodeTargetIdx, setBarcodeTargetIdx] = useState<number>(-1);
 
   const handleFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -28,14 +31,39 @@ export default function UploadStep({ onProcessed }: Props) {
       const ingredients = files[i + 1];
       const barcode = files[i + 2] || null;
       if (front && ingredients) {
-        newGroups.push({ front, ingredients, barcode });
+        newGroups.push({ front, ingredients, barcode, extraBarcodes: [] });
       }
     }
-    setGroups(newGroups);
+    setGroups(g => [...g, ...newGroups]);
+    e.target.value = '';
   };
 
   const removeGroup = (idx: number) => {
     setGroups(g => g.filter((_, i) => i !== idx));
+  };
+
+  const addBarcodeToGroup = (idx: number) => {
+    setBarcodeTargetIdx(idx);
+    barcodeInputRef.current?.click();
+  };
+
+  const handleBarcodeFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0 || barcodeTargetIdx < 0) return;
+    setGroups(g => g.map((group, i) =>
+      i === barcodeTargetIdx
+        ? { ...group, extraBarcodes: [...group.extraBarcodes, ...files] }
+        : group
+    ));
+    e.target.value = '';
+  };
+
+  const removeExtraBarcode = (groupIdx: number, barcodeIdx: number) => {
+    setGroups(g => g.map((group, i) =>
+      i === groupIdx
+        ? { ...group, extraBarcodes: group.extraBarcodes.filter((_, j) => j !== barcodeIdx) }
+        : group
+    ));
   };
 
   const handleSubmit = async () => {
@@ -52,6 +80,7 @@ export default function UploadStep({ onProcessed }: Props) {
       formData.append('front', g.front);
       formData.append('ingredients', g.ingredients);
       if (g.barcode) formData.append('barcode', g.barcode);
+      g.extraBarcodes.forEach(f => formData.append('extraBarcodes', f));
 
       try {
         const res = await fetch('/api/batch/process', { method: 'POST', body: formData });
@@ -74,7 +103,7 @@ export default function UploadStep({ onProcessed }: Props) {
         Every 3 photos = 1 product.
       </p>
 
-      {/* File picker */}
+      {/* File pickers */}
       <input
         ref={fileInputRef}
         type="file"
@@ -82,6 +111,14 @@ export default function UploadStep({ onProcessed }: Props) {
         multiple
         style={{ display: 'none' }}
         onChange={handleFilesSelected}
+      />
+      <input
+        ref={barcodeInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        style={{ display: 'none' }}
+        onChange={handleBarcodeFilesSelected}
       />
       <button onClick={() => fileInputRef.current?.click()} style={styles.selectBtn}>
         Select Photos
@@ -98,14 +135,26 @@ export default function UploadStep({ onProcessed }: Props) {
               <div key={idx} style={styles.groupCard}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <strong style={{ fontSize: 13 }}>Product {idx + 1}</strong>
-                  <button onClick={() => removeGroup(idx)} style={styles.removeBtn}>Remove</button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => addBarcodeToGroup(idx)} style={styles.addBarcodeBtn}>+ Barcode</button>
+                    <button onClick={() => removeGroup(idx)} style={styles.removeBtn}>Remove</button>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <Thumb file={group.front} label="Front" />
                   <Thumb file={group.ingredients} label="Ingredients" />
                   {group.barcode ? <Thumb file={group.barcode} label="Barcode" /> : (
                     <div style={styles.noBarcode}>No barcode</div>
                   )}
+                  {group.extraBarcodes.map((f, bi) => (
+                    <div key={bi} style={{ position: 'relative' }}>
+                      <Thumb file={f} label={`+Barcode ${bi + 1}`} />
+                      <button
+                        onClick={() => removeExtraBarcode(idx, bi)}
+                        style={styles.extraBarcodeRemove}
+                      >×</button>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
@@ -129,6 +178,7 @@ function Thumb({ file, label }: { file: File; label: string }) {
     <div style={styles.thumb}>
       <img src={URL.createObjectURL(file)} style={{ width: 70, height: 70, objectFit: 'cover', borderRadius: 6 }} />
       <span style={{ fontSize: 10, color: '#888', marginTop: 2 }}>{label}</span>
+      <span style={{ fontSize: 9, color: '#bbb', marginTop: 1, maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
     </div>
   );
 }
@@ -172,6 +222,32 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#e53935',
     fontSize: 12,
     cursor: 'pointer',
+  },
+  addBarcodeBtn: {
+    background: 'none',
+    border: '1px solid #2e7d56',
+    color: '#2e7d56',
+    fontSize: 11,
+    padding: '2px 8px',
+    borderRadius: 4,
+    cursor: 'pointer',
+    fontWeight: 600,
+  },
+  extraBarcodeRemove: {
+    position: 'absolute' as const,
+    top: -4,
+    right: -4,
+    background: '#e53935',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '50%',
+    width: 16,
+    height: 16,
+    fontSize: 11,
+    lineHeight: '16px',
+    textAlign: 'center' as const,
+    cursor: 'pointer',
+    padding: 0,
   },
   submitBtn: {
     background: '#2e7d56',

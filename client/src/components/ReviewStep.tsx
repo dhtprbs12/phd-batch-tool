@@ -66,6 +66,7 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
           extracted: current.extracted,
           ingredients: current.ingredients,
           barcode: current.barcode,
+          extraBarcodes: current.extraBarcodes || [],
         }),
       });
       const data = await res.json();
@@ -125,10 +126,10 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
               <Field label="Brand" value={current.extracted.brand || ''} onChange={v => updateExtracted('brand', v)} />
               <Field label="Line Name" value={current.extracted.lineName || ''} onChange={v => updateExtracted('lineName', v)} />
               <Field label="Product Name" value={current.extracted.productName || ''} onChange={v => updateExtracted('productName', v)} />
-              <Field label="Life Stage" value={current.extracted.lifeStage} onChange={v => updateExtracted('lifeStage', v)} />
+              <SelectField label="Life Stage" value={current.extracted.lifeStage} options={['all', 'puppy', 'kitten', 'adult', 'senior']} onChange={v => updateExtracted('lifeStage', v)} />
               <Field label="Proteins" value={(current.extracted.primaryProteins || []).join(', ')} onChange={v => updateExtracted('primaryProteins', v.split(',').map(s => s.trim()).filter(Boolean))} />
               <Field label="Product Type" value={current.extracted.productType} onChange={v => updateExtracted('productType', v)} />
-              <Field label="Breed Size" value={current.extracted.breedSize} onChange={v => updateExtracted('breedSize', v)} />
+              <SelectField label="Breed Size" value={current.extracted.breedSize} options={['all', 'large_breed', 'small_breed']} onChange={v => updateExtracted('breedSize', v)} />
             </div>
           </div>
 
@@ -142,6 +143,18 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
               placeholder="Barcode value"
               style={styles.input}
             />
+            {current.extraBarcodes && current.extraBarcodes.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <p style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>
+                  + {current.extraBarcodes.length} variant barcode{current.extraBarcodes.length > 1 ? 's' : ''} (different sizes)
+                </p>
+                {current.extraBarcodes.map((bc, i) => (
+                  <div key={i} style={{ fontSize: 12, color: '#5C6B66', padding: '2px 0' }}>
+                    #{i + 1}: {bc}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Ingredients */}
@@ -190,6 +203,19 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
     <div>
       <label style={{ fontSize: 11, color: '#888' }}>{label}</label>
       <input type="text" value={value} onChange={e => onChange(e.target.value)} style={styles.input} />
+    </div>
+  );
+}
+
+function SelectField({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <label style={{ fontSize: 11, color: '#888' }}>{label}</label>
+      <select value={value} onChange={e => onChange(e.target.value)} style={styles.input}>
+        {options.map(opt => (
+          <option key={opt} value={opt}>{opt}</option>
+        ))}
+      </select>
     </div>
   );
 }

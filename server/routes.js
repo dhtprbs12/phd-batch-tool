@@ -55,12 +55,14 @@ router.post(
     { name: 'front', maxCount: 1 },
     { name: 'ingredients', maxCount: 1 },
     { name: 'barcode', maxCount: 1 },
+    { name: 'extraBarcodes', maxCount: 20 },
   ]),
   async (req, res) => {
     try {
       const frontFile = req.files?.front?.[0];
       const ingredientsFile = req.files?.ingredients?.[0];
       const barcodeFile = req.files?.barcode?.[0];
+      const extraBarcodeFiles = req.files?.extraBarcodes || [];
 
       if (!frontFile || !ingredientsFile) {
         return res.status(400).json({ error: 'front and ingredients images are required' });
@@ -85,7 +87,19 @@ router.post(
         }
       }
 
-      // Skip if barcode already in DB
+      // 4. Decode extra barcodes (variant sizes)
+      const extraBarcodeValues = [];
+      for (const ebFile of extraBarcodeFiles) {
+        try {
+          const eb = await ensureJpeg(ebFile.path);
+          const val = await decodeBarcode(eb.path);
+          if (val) extraBarcodeValues.push(val);
+        } catch (e) {
+          console.warn('⚠️ Extra barcode decode failed:', e.message);
+        }
+      }
+
+      // Skip if primary barcode already in DB
       if (barcodeValue) {
         const existing = await productService.findByBarcode(barcodeValue);
         if (existing) {
@@ -119,6 +133,7 @@ router.post(
         ingredients: ingredientsResult.ingredientsList || [],
         rawIngredientsText: ingredientsResult.rawIngredientsText || '',
         barcode: barcodeValue,
+        extraBarcodes: extraBarcodeValues,
         createdAt: new Date().toISOString(),
       };
 
@@ -288,7 +303,7 @@ router.get('/ingredients/suggest', async (req, res) => {
  */
 router.post('/save', async (req, res) => {
   try {
-    const { id, extracted, ingredients, barcode } = req.body;
+    const { id, extracted, ingredients, barcode, extraBarcodes } = req.body;
 
     if (!extracted || !ingredients || ingredients.length === 0) {
       return res.status(400).json({ error: 'extracted data and ingredients are required' });
@@ -310,7 +325,7 @@ router.post('/save', async (req, res) => {
       productName: extracted.productName,
     });
 
-    const displayName = productMatchKey.buildDisplayName(slots) || extracted.productName || 'Unknown Product';
+    const displayName = extracted.lineName || extracted.productName || 'Unknown Product';
 
     // Check if this exact barcode already exists — only skip if same barcode
     let product = null;
@@ -417,6 +432,40 @@ router.post('/save', async (req, res) => {
       console.error(`⚠️ [Batch] Analysis failed (product still saved):`, analysisErr.message);
     }
 
+    // Create variant rows for extra barcodes (same product, different size)
+    const variantIds = [];
+    if (Array.isArray(extraBarcodes) && extraBarcodes.length > 0) {
+      for (const variantBarcode of extraBarcodes) {
+        if (!variantBarcode) continue;
+        const existingVariant = await productService.findByBarcode(variantBarcode);
+        if (existingVariant) {
+          console.log(`⚡ [Batch] Variant barcode ${variantBarcode} already exists, skipping`);
+          continue;
+        }
+        const variant = await productService.createFromScan({
+          name: displayName,
+          displayName,
+          manufacturer: extracted.manufacturer,
+          brand: extracted.brand,
+          lineName: slots.lineName,
+          primaryProteins: slots.primaryProteins,
+          breedSize: slots.breedSize,
+          dietTags: slots.dietTags,
+          productType: extracted.productType || 'dry_food',
+          texture: extracted.texture,
+          targetPetType: extracted.petType || 'dog',
+          lifeStage: extracted.lifeStage || 'all',
+          rawIngredientsText: rawText,
+          ingredientsList,
+          imageUrl: null,
+          barcode: variantBarcode,
+          source: 'batch_import',
+        });
+        variantIds.push({ id: variant.id, barcode: variantBarcode });
+        console.log(`✅ [Batch] Variant saved: ${variantBarcode} → ${variant.id}`);
+      }
+    }
+
     // Remove from pending queue
     const queueIdx = pendingQueue.findIndex(p => p.id === id);
     if (queueIdx >= 0) pendingQueue[queueIdx].status = 'saved';
@@ -424,6 +473,7 @@ router.post('/save', async (req, res) => {
     res.json({
       success: true,
       product: { id: product.id, name: product.name, brand: product.brand, barcode: product.barcode },
+      variants: variantIds,
     });
   } catch (e) {
     console.error('❌ Save error:', e);
