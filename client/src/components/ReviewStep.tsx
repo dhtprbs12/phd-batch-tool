@@ -55,6 +55,28 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
     });
   };
 
+  const updateExtraBarcode = (idx: number, value: string) => {
+    setEditedItems(prev => {
+      const next = new Map(prev);
+      const item = { ...next.get(current.id)! };
+      const barcodes = [...(item.extraBarcodes || [])];
+      barcodes[idx] = value;
+      item.extraBarcodes = barcodes;
+      next.set(current.id, item);
+      return next;
+    });
+  };
+
+  const removeExtraBarcode = (idx: number) => {
+    setEditedItems(prev => {
+      const next = new Map(prev);
+      const item = { ...next.get(current.id)! };
+      item.extraBarcodes = (item.extraBarcodes || []).filter((_, i) => i !== idx);
+      next.set(current.id, item);
+      return next;
+    });
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -95,8 +117,12 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
     if (currentIdx < queue.length - 1) {
       setCurrentIdx(i => i + 1);
     } else {
-      setCurrentIdx(queue.length); // triggers "all done" view
+      setCurrentIdx(queue.length);
     }
+  };
+
+  const goPrev = () => {
+    if (currentIdx > 0) setCurrentIdx(i => i - 1);
   };
 
   return (
@@ -149,8 +175,15 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
                   + {current.extraBarcodes.length} variant barcode{current.extraBarcodes.length > 1 ? 's' : ''} (different sizes)
                 </p>
                 {current.extraBarcodes.map((bc, i) => (
-                  <div key={i} style={{ fontSize: 12, color: '#5C6B66', padding: '2px 0' }}>
-                    #{i + 1}: {bc}
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                    <span style={{ fontSize: 11, color: '#888', minWidth: 20 }}>#{i + 1}</span>
+                    <input
+                      type="text"
+                      value={bc}
+                      onChange={e => updateExtraBarcode(i, e.target.value)}
+                      style={{ ...styles.input, flex: 1, marginBottom: 0 }}
+                    />
+                    <button onClick={() => removeExtraBarcode(i)} style={{ background: 'none', border: 'none', color: '#e53935', cursor: 'pointer', fontSize: 14 }}>×</button>
                   </div>
                 ))}
               </div>
@@ -170,6 +203,7 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
 
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+            <button onClick={goPrev} disabled={currentIdx === 0} style={{ ...styles.skipBtn, opacity: currentIdx === 0 ? 0.4 : 1 }}>← Prev</button>
             <button onClick={handleSave} disabled={saving} style={styles.saveBtn}>
               {saving ? 'Saving...' : 'Approve & Save'}
             </button>
