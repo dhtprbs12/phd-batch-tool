@@ -1,5 +1,4 @@
 import React, { useCallback, useRef, useState } from 'react';
-import heic2any from 'heic2any';
 import type { ProductSet } from '../App';
 
 interface Props {
@@ -21,25 +20,10 @@ export default function UploadStep({ onProcessed }: Props) {
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const [barcodeTargetIdx, setBarcodeTargetIdx] = useState<number>(-1);
 
-  const convertIfHeic = async (file: File): Promise<File> => {
-    const name = file.name.toLowerCase();
-    if (name.endsWith('.heic') || name.endsWith('.heif') || file.type === 'image/heic' || file.type === 'image/heif') {
-      try {
-        const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 }) as Blob;
-        return new File([blob], file.name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg'), { type: 'image/jpeg' });
-      } catch (e) {
-        console.warn('HEIC conversion failed, using original:', e);
-      }
-    }
-    return file;
-  };
-
-  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawFiles = Array.from(e.target.files || []);
-    if (rawFiles.length < 2) return;
+  const handleFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length < 2) return;
     e.target.value = '';
-
-    const files = await Promise.all(rawFiles.map(f => convertIfHeic(f)));
 
     // Auto-group: every 3 photos = 1 product (front, ingredients, barcode)
     const newGroups: FileGroup[] = [];
@@ -63,11 +47,10 @@ export default function UploadStep({ onProcessed }: Props) {
     barcodeInputRef.current?.click();
   };
 
-  const handleBarcodeFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawFiles = Array.from(e.target.files || []);
-    if (rawFiles.length === 0 || barcodeTargetIdx < 0) return;
+  const handleBarcodeFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0 || barcodeTargetIdx < 0) return;
     e.target.value = '';
-    const files = await Promise.all(rawFiles.map(f => convertIfHeic(f)));
     setGroups(g => g.map((group, i) =>
       i === barcodeTargetIdx
         ? { ...group, extraBarcodes: [...group.extraBarcodes, ...files] }
@@ -191,9 +174,17 @@ export default function UploadStep({ onProcessed }: Props) {
 }
 
 function Thumb({ file, label }: { file: File; label: string }) {
+  const [broken, setBroken] = useState(false);
+  const url = URL.createObjectURL(file);
   return (
     <div style={styles.thumb}>
-      <img src={URL.createObjectURL(file)} style={{ width: 70, height: 70, objectFit: 'cover', borderRadius: 6 }} />
+      {broken ? (
+        <div style={{ width: 70, height: 70, background: '#f0f0f0', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#999', textAlign: 'center' as const }}>
+          📷<br />HEIC
+        </div>
+      ) : (
+        <img src={url} onError={() => setBroken(true)} style={{ width: 70, height: 70, objectFit: 'cover', borderRadius: 6 }} />
+      )}
       <span style={{ fontSize: 10, color: '#888', marginTop: 2 }}>{label}</span>
       <span style={{ fontSize: 9, color: '#bbb', marginTop: 1, maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
     </div>
