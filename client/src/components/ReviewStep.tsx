@@ -156,6 +156,7 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
               <Field label="Proteins" value={(current.extracted.primaryProteins || []).join(', ')} onChange={v => updateExtracted('primaryProteins', v.split(',').map(s => s.trim()).filter(Boolean))} />
               <Field label="Product Type" value={current.extracted.productType} onChange={v => updateExtracted('productType', v)} />
               <SelectField label="Breed Size" value={current.extracted.breedSize} options={['all', 'large_breed', 'small_breed']} onChange={v => updateExtracted('breedSize', v)} />
+              <Field label="Diet Tags" value={(current.extracted.dietTags || []).join(', ')} onChange={v => updateExtracted('dietTags', v.split(',').map(s => s.trim()).filter(Boolean))} />
             </div>
           </div>
 
