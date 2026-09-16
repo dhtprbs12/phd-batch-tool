@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import type { ProductSet } from '../App';
 import IngredientEditor from './IngredientEditor';
 
@@ -153,10 +153,10 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
               <Field label="Line Name" value={current.extracted.lineName || ''} onChange={v => updateExtracted('lineName', v)} />
               <Field label="Product Name" value={current.extracted.productName || ''} onChange={v => updateExtracted('productName', v)} />
               <SelectField label="Life Stage" value={current.extracted.lifeStage} options={['all', 'puppy', 'kitten', 'adult', 'senior']} onChange={v => updateExtracted('lifeStage', v)} />
-              <Field label="Proteins" value={(current.extracted.primaryProteins || []).join(', ')} onChange={v => updateExtracted('primaryProteins', v.split(',').map(s => s.trim()).filter(Boolean))} />
+              <ArrayField label="Proteins" values={current.extracted.primaryProteins || []} onChange={v => updateExtracted('primaryProteins', v)} />
               <Field label="Product Type" value={current.extracted.productType} onChange={v => updateExtracted('productType', v)} />
               <SelectField label="Breed Size" value={current.extracted.breedSize} options={['all', 'large_breed', 'small_breed']} onChange={v => updateExtracted('breedSize', v)} />
-              <Field label="Diet Tags" value={(current.extracted.dietTags || []).join(', ')} onChange={v => updateExtracted('dietTags', v.split(',').map(s => s.trim()).filter(Boolean))} />
+              <ArrayField label="Diet Tags" values={current.extracted.dietTags || []} onChange={v => updateExtracted('dietTags', v)} />
             </div>
           </div>
 
@@ -238,6 +238,27 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
     <div>
       <label style={{ fontSize: 11, color: '#888' }}>{label}</label>
       <input type="text" value={value} onChange={e => onChange(e.target.value)} style={styles.input} />
+    </div>
+  );
+}
+
+function ArrayField({ label, values, onChange }: { label: string; values: string[]; onChange: (v: string[]) => void }) {
+  const [text, setText] = useState((values || []).join(', '));
+  const prevId = useRef(values);
+  if (values !== prevId.current) {
+    prevId.current = values;
+    setText((values || []).join(', '));
+  }
+  return (
+    <div>
+      <label style={{ fontSize: 11, color: '#888' }}>{label}</label>
+      <input
+        type="text"
+        value={text}
+        onChange={e => setText(e.target.value)}
+        onBlur={() => onChange(text.split(',').map(s => s.trim()).filter(Boolean))}
+        style={styles.input}
+      />
     </div>
   );
 }
