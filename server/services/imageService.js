@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const sharp = require('sharp');
 const { query } = require('./connection');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 
@@ -236,13 +237,34 @@ class ImageService {
 
       const publicUrl = `${this.r2PublicUrl}/${key}`;
       console.log(`☁️  [R2] Uploaded: ${publicUrl} (${(buffer.length / 1024).toFixed(1)}KB)`);
+
+      // Auto-generate thumbnail
+      this._generateThumb(buffer, key).catch(e =>
+        console.warn(`⚠️  [R2] Thumb generation failed for ${key}:`, e.message)
+      );
+
       return publicUrl;
     } catch (error) {
       console.error(`❌ [R2] Upload error:`, error.message);
-      // Fall back to local storage
       const filename = key.split('/').pop();
       return await this.saveLocally(buffer, filename);
     }
+  }
+
+  async _generateThumb(buffer, key) {
+    const dotIdx = key.lastIndexOf('.');
+    const thumbKey = dotIdx === -1 ? key + '_thumb' : key.slice(0, dotIdx) + '_thumb' + key.slice(dotIdx);
+    const thumbBuffer = await sharp(buffer)
+      .resize(200, 200, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+    await this.r2Client.send(new PutObjectCommand({
+      Bucket: this.r2BucketName,
+      Key: thumbKey,
+      Body: thumbBuffer,
+      ContentType: 'image/jpeg',
+    }));
+    console.log(`🖼  [R2] Thumb: ${thumbKey} (${(thumbBuffer.length / 1024).toFixed(1)}KB)`);
   }
 
   /**
