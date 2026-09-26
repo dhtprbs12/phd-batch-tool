@@ -698,8 +698,13 @@ class IngredientAnalyzer {
         const name = String(ingredientsList[i] || '').trim();
         if (!name) continue;
         const normalizedName = this.normalizeIngredientName(name);
-        const cached = await this.cacheLookup(normalizedName, conditionHash, petType);
-        if (!cached.length) {
+        const exact = await query(
+          `SELECT id FROM ai_assessment_cache
+           WHERE REPLACE(ingredient_normalized, '-', ' ') = ? AND conditions_hash = ? AND pet_type = ?
+           LIMIT 1`,
+          [normalizedName, conditionHash, petType]
+        );
+        if (!exact.length) {
           out.push({ name, normalizedName, position: i + 1 });
         }
       }
@@ -1078,50 +1083,14 @@ class IngredientAnalyzer {
       }
     }
 
-    // 2. Depluralized
+    // 2. Depluralized only ("sweet potatoes" → "sweet potato"). Do not
+    // reuse scores by stripping organic/natural or fuzzy-matching another name.
     const singular = this.depluralize(normalizedName);
     if (singular !== normalizedName) {
       cached = await tryExact(singular);
       if (cached.length > 0) {
         console.log(`🔄 [Cache] Deplural match: "${normalizedName}" → "${singular}"`);
         return cached;
-      }
-    }
-
-    // 3. Prefix-stripped
-    const stripped = this.stripPrefix(normalizedName);
-    if (stripped !== normalizedName) {
-      cached = await tryExact(stripped);
-      if (cached.length > 0) {
-        console.log(`🔄 [Cache] Prefix-strip match: "${normalizedName}" → "${stripped}"`);
-        return cached;
-      }
-      
-      // 4. Depluralized + prefix-stripped
-      const strippedSingular = this.depluralize(stripped);
-      if (strippedSingular !== stripped) {
-        cached = await tryExact(strippedSingular);
-        if (cached.length > 0) {
-          console.log(`🔄 [Cache] Strip+deplural match: "${normalizedName}" → "${strippedSingular}"`);
-          return cached;
-        }
-      }
-    }
-
-    // 5. SQL LIKE fuzzy (last resort)
-    // Step 5a: Try full name LIKE match first (most precise)
-    if (normalizedName.length >= 4) {
-      const fuzzyFull = await query(
-        `SELECT * FROM ai_assessment_cache 
-         WHERE ingredient_normalized LIKE ? AND ${baseWhere} AND pet_type = ?
-         ORDER BY CHAR_LENGTH(ingredient_normalized) ASC
-         LIMIT 1`,
-        [`%${normalizedName}%`, ...baseParams, petType]
-      );
-      const matchLenFull = fuzzyFull[0]?.ingredient_normalized?.length || 0;
-      if (fuzzyFull.length > 0 && matchLenFull <= normalizedName.length * 2.5) {
-        console.log(`🔄 [Cache] Fuzzy match: "${normalizedName}" → "${fuzzyFull[0].ingredient_normalized}"`);
-        return fuzzyFull;
       }
     }
 

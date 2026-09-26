@@ -152,7 +152,7 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
               <Field label="Brand" value={current.extracted.brand || ''} onChange={v => updateExtracted('brand', v)} />
               <Field label="Line Name" value={current.extracted.lineName || ''} onChange={v => updateExtracted('lineName', v)} />
               <Field label="Product Name" value={current.extracted.productName || ''} onChange={v => updateExtracted('productName', v)} />
-              <SelectField label="Life Stage" value={current.extracted.lifeStage} options={['all', 'puppy', 'kitten', 'adult', 'senior']} onChange={v => updateExtracted('lifeStage', v)} />
+              <SelectField label="Life Stage" value={current.extracted.lifeStage} options={['all', 'puppy', 'kitten', 'adult', 'senior', 'puppy_and_adult']} onChange={v => updateExtracted('lifeStage', v)} />
               <ArrayField label="Proteins" values={current.extracted.primaryProteins || []} onChange={v => updateExtracted('primaryProteins', v)} />
               <Field label="Product Type" value={current.extracted.productType} onChange={v => updateExtracted('productType', v)} />
               <SelectField label="Breed Size" value={current.extracted.breedSize} options={['all', 'large_breed', 'small_breed']} onChange={v => updateExtracted('breedSize', v)} />

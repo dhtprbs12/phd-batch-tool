@@ -4,7 +4,7 @@
  * Display names are built separately; match_key is for exact DB lookup.
  */
 
-const ALLOWED_LIFE_STAGES = new Set(['puppy', 'kitten', 'adult', 'senior', 'all']);
+const ALLOWED_LIFE_STAGES = new Set(['puppy', 'kitten', 'adult', 'senior', 'all', 'puppy_and_adult']);
 const ALLOWED_BREED_SIZES = new Set(['all', 'large_breed', 'small_breed']);
 
 function normalizeManufacturer(manufacturer) {
