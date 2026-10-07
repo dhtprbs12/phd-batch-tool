@@ -32,6 +32,22 @@ const { decodeBarcode } = require('./barcodeDecoder');
 
 const router = express.Router();
 
+// Proteins and the grain tag come from the ingredient photo. The front photo
+// only supplies limited_ingredient, and only when the ingredient photo missed it.
+function slotsFromPhotos(frontResult, ingredientsResult) {
+  const frontProteins = frontResult.primaryProteins || [];
+  const ingredientProteins = ingredientsResult.primaryProteins || [];
+  const primaryProteins = ingredientProteins.length ? ingredientProteins : frontProteins;
+
+  const frontTags = frontResult.dietTags || [];
+  const ingredientTags = ingredientsResult.dietTags || [];
+  const grain = [...ingredientTags, ...frontTags].find((tag) => tag === 'grain_free' || tag === 'with_grains') || null;
+  const limited = ingredientTags.includes('limited_ingredient') || frontTags.includes('limited_ingredient');
+  const dietTags = [grain, limited ? 'limited_ingredient' : null].filter(Boolean);
+
+  return { primaryProteins, dietTags };
+}
+
 // Multer config
 const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
@@ -123,12 +139,11 @@ router.post(
           lineName: frontResult.lineName || null,
           productName: frontResult.productName || null,
           lifeStage: frontResult.lifeStage || 'all',
-          primaryProteins: frontResult.primaryProteins || [],
+          ...slotsFromPhotos(frontResult, ingredientsResult),
           petType: frontResult.targetPet || 'dog',
           productType: frontResult.productType || 'dry_food',
           texture: frontResult.texture || null,
           breedSize: frontResult.breedSize || 'all',
-          dietTags: frontResult.dietTags || [],
         },
         ingredients: ingredientsResult.ingredientsList || [],
         rawIngredientsText: ingredientsResult.rawIngredientsText || '',
@@ -212,12 +227,11 @@ router.post('/process-bulk', upload.array('photos', 300), async (req, res) => {
           lineName: frontResult.lineName || null,
           productName: frontResult.productName || null,
           lifeStage: frontResult.lifeStage || 'all',
-          primaryProteins: frontResult.primaryProteins || [],
+          ...slotsFromPhotos(frontResult, ingredientsResult),
           petType: frontResult.targetPet || 'dog',
           productType: frontResult.productType || 'dry_food',
           texture: frontResult.texture || null,
           breedSize: frontResult.breedSize || 'all',
-          dietTags: frontResult.dietTags || [],
         },
         ingredients: ingredientsResult.ingredientsList || [],
         rawIngredientsText: ingredientsResult.rawIngredientsText || '',

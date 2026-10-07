@@ -120,6 +120,7 @@ class GeminiService {
     if (!result.dietTags || result.dietTags.length === 0) {
       const tags = [];
       if (/\bgrain[\s-]?free\b/.test(slotInferText)) tags.push('grain_free');
+      else if (/\b(?:wholesome|ancient|whole|with)[\s-]?grains?\b/.test(slotInferText)) tags.push('with_grains');
       if (/\blimited[\s-]?ingredient\b/.test(slotInferText)) tags.push('limited_ingredient');
       if (tags.length) result.dietTags = tags;
     }
@@ -212,9 +213,9 @@ Return JSON only:
   "targetPet": "dog" | "cat" | "both" | null,
   "lifeStage": "puppy" | "kitten" | "adult" | "senior" | "all" | null,
   "lineName": "string or null",
-  "primaryProteins": ["chicken"] or null,
+  "primaryProteins": ["chicken"] or ["poultry"] or ["salmon","herring"] or null,
   "breedSize": "all" | "large_breed" | "small_breed" | null,
-  "dietTags": ["grain_free"] or null,
+  "dietTags": ["grain_free"] | ["with_grains"] | ["grain_free","limited_ingredient"] or null,
   "packageShape": "flat" | "round" | "pouch" | null,
   "guaranteedAnalysis": { "protein": number or null, "fat": number or null, "fiber": number or null, "moisture": number or null },
   "confidence": number between 0 and 1,
@@ -234,9 +235,30 @@ SLOT EXTRACTION (most important — fill these FIRST):
 - brand: the product line brand displayed most prominently on the front of the package (e.g. "Pro Plan", "Blue Buffalo", "Science Diet", "ACANA", "Wellness", "Bil-Jac"). This is NOT the parent company — it's the name consumers use to identify the product line.
 - lineName: product LINE or SERIES name only (e.g. "Select", "Core", "Complete Essentials", "Wholesome Grains", "Life Protection"). NOT flavor/protein words.
 - lifeStage: "Puppy" → "puppy", "Kitten" → "kitten", "Adult" → "adult", "Senior"/"7+" → "senior", "All Life Stages" → "all". If label clearly says a life stage, you MUST capture it here.
-- primaryProteins: main animal protein sources as lowercase (e.g. ["chicken"], ["lamb","salmon"]). From flavor/name on label.
+- primaryProteins: the animal protein species in the ingredient declaration, most to least by weight, lowercase.
+  Read the declaration in the OCR, not the flavor printed on the front. A bag named only "Adult Bulldog"
+  still has a protein — it is whatever species the declaration lists first.
+  * Name the species, not the cut: "chicken meal", "chicken by-product meal" and "deboned chicken" are all "chicken".
+  * "poultry", "poultry meal" and "poultry by-product meal" are "poultry". Never rewrite poultry as chicken —
+    the label refused to name the bird, so chicken would be a guess.
+  * Fats and oils are not proteins: "chicken fat" does not count. Plant proteins do not count either
+    (pea protein, corn gluten meal, wheat gluten).
+  * Use the specific fish ("salmon", "whitefish", "herring"), not the word "fish", unless the declaration
+    itself only says fish. "Red meat" is a marketing phrase — use the species the declaration names ("beef").
+  * Skip a bare organ ("liver") when no species is attached.
+  * Only when no ingredient declaration is readable, fall back to the protein named on the front.
+    If the front names none, return null. Do not guess.
 - breedSize: "large_breed" | "small_breed" | "all". Only when label explicitly says Large Breed / Small Breed.
-- dietTags: ["grain_free"], ["limited_ingredient"] — only when clearly stated on label.
+- dietTags: exactly one of "grain_free" or "with_grains", plus "limited_ingredient" when the label says so.
+  Decide the grain tag from the ingredient declaration in the OCR text, not from marketing wording:
+  * any cereal grain or a fraction of one → "with_grains" (rice, brown rice, oats, oatmeal, barley,
+    corn, wheat, sorghum, millet, rye, quinoa, and fractions such as corn gluten meal, wheat gluten,
+    oat fiber, rice bran). "Barley grass" and "corn plant" are greens, not grain — they do not count.
+  * no such ingredient → "grain_free"
+  The ingredient declaration wins over the front of the bag: a label that shouts GRAIN FREE but lists
+  brown rice is "with_grains". Only when no ingredient declaration is readable may you fall back to the
+  label wording ("Grain Free", "Wholesome Grains", "Ancient Grains", "With Grains").
+  Omit the grain tag entirely if neither the ingredients nor the wording tell you anything.
 - targetPet: "dog" | "cat" | "both" — from "Dog Food", "Cat Food", or imagery.
 
 productName: Just write the full product name as printed on the label (excluding manufacturer and brand). No formatting rules needed — we build the display name from slots in code.
@@ -260,8 +282,14 @@ Examples:
   Label: "Wellness CORE Grain Free Ocean Whitefish Salmon & Herring"
   → manufacturer "Wellness", brand "Wellness", productName "CORE Grain Free Ocean Whitefish Salmon & Herring", lineName "Core", dietTags ["grain_free"], primaryProteins ["whitefish","salmon","herring"]
 
-  Label: "ACANA Wholesome Grains Red Meat Recipe"
-  → manufacturer "Champion Petfoods", brand "ACANA", productName "Wholesome Grains Red Meat Recipe", lineName "Wholesome Grains", primaryProteins ["beef"]`;
+  Label: "ACANA Wholesome Grains Red Meat Recipe" — ingredients list beef, oat groats and whole sorghum
+  → manufacturer "Champion Petfoods", brand "ACANA", productName "Wholesome Grains Red Meat Recipe", lineName "Wholesome Grains", dietTags ["with_grains"], primaryProteins ["beef"]
+
+  Label: "Royal Canin Adult Bulldog" — front names no protein, ingredients start "chicken by-product meal, brewers rice, wheat gluten"
+  → primaryProteins ["chicken"], dietTags ["with_grains"]
+
+  Label: ingredients start "poultry by-product meal, corn"
+  → primaryProteins ["poultry"], dietTags ["with_grains"]  (poultry stays poultry — do not write chicken)`;
 
     const result = await this.model.generateContent({
       contents: [
@@ -323,9 +351,9 @@ Return your response in this exact JSON format:
   "targetPet": "dog" | "cat" | "both" | null,
   "lifeStage": "puppy" | "kitten" | "adult" | "senior" | "all" | null,
   "lineName": "string or null",
-  "primaryProteins": ["chicken"] or null,
+  "primaryProteins": ["chicken"] or ["poultry"] or ["salmon","herring"] or null,
   "breedSize": "all" | "large_breed" | "small_breed" | null,
-  "dietTags": ["grain_free"] or null,
+  "dietTags": ["grain_free"] | ["with_grains"] | ["grain_free","limited_ingredient"] or null,
   "packageShape": "flat" | "round" | "pouch" | null,
   "ingredientsList": ["ingredient1", "ingredient2", ...],
   "rawIngredientsText": "ingredient paragraph copied as printed on the label (see PRINT-FIDELITY); null if not visible",
@@ -366,6 +394,27 @@ Texture inference rules (IMPORTANT):
 - "semi_moist": Water in top 3-5 but not #1-2, OR contains glycerin as humectant, OR soft chews, OR moisture 14-70%
 - "freeze_dried": Product name mentions freeze-dried or raw freeze-dried
 - If unsure, infer from product name and ingredient position
+
+Primary protein rule (primaryProteins):
+- List the animal protein species in the ingredient declaration, most to least by weight, lowercase.
+- Name the species, not the cut: "chicken meal", "chicken by-product meal" and "deboned chicken" are all "chicken".
+- "poultry", "poultry meal" and "poultry by-product meal" are "poultry". Never rewrite poultry as chicken.
+- Fats and oils are not proteins ("chicken fat" does not count). Plant proteins do not count (pea protein, corn gluten meal).
+- Use the specific fish ("salmon", "herring"), not "fish", unless the declaration only says fish.
+- "Red meat" is marketing — use the species the declaration names. Skip a bare "liver" with no species.
+- Only when no declaration is readable, fall back to the protein named on the front. If it names none, return null.
+
+Diet tag rule (dietTags):
+- Return exactly one of "grain_free" or "with_grains", plus "limited_ingredient" when the label says so.
+- Decide the grain tag from the ingredient declaration you extracted, not from marketing wording:
+  * any cereal grain or a fraction of one → "with_grains" (rice, brown rice, oats, oatmeal, barley,
+    corn, wheat, sorghum, millet, rye, quinoa, and fractions such as corn gluten meal, wheat gluten,
+    oat fiber, rice bran). "Barley grass" and "corn plant" are greens, not grain — they do not count.
+  * no such ingredient → "grain_free"
+- The declaration wins over the front of the bag: a label that shouts GRAIN FREE but lists brown rice
+  is "with_grains". Only when no ingredient declaration is readable may you fall back to the label
+  wording ("Grain Free", "Wholesome Grains", "Ancient Grains", "With Grains").
+- Omit the grain tag entirely if neither the ingredients nor the wording tell you anything.
 
 CRITICAL RULES:
 - If imageType is "front_label" and no ingredients visible, set ingredientsList to [] and rawIngredientsText to null

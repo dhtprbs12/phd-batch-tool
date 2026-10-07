@@ -153,10 +153,22 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
               <Field label="Line Name" value={current.extracted.lineName || ''} onChange={v => updateExtracted('lineName', v)} />
               <Field label="Product Name" value={current.extracted.productName || ''} onChange={v => updateExtracted('productName', v)} />
               <SelectField label="Life Stage" value={current.extracted.lifeStage} options={['all', 'puppy', 'kitten', 'adult', 'senior', 'puppy_and_adult']} onChange={v => updateExtracted('lifeStage', v)} />
-              <ArrayField label="Proteins" values={current.extracted.primaryProteins || []} onChange={v => updateExtracted('primaryProteins', v)} />
               <Field label="Product Type" value={current.extracted.productType} onChange={v => updateExtracted('productType', v)} />
               <SelectField label="Breed Size" value={current.extracted.breedSize} options={['all', 'large_breed', 'small_breed']} onChange={v => updateExtracted('breedSize', v)} />
-              <ArrayField label="Diet Tags" values={current.extracted.dietTags || []} onChange={v => updateExtracted('dietTags', v)} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
+              <ArrayField
+                label="Primary Proteins"
+                hint="Heaviest first. Comma separated. chicken, poultry, salmon, whitefish"
+                values={current.extracted.primaryProteins || []}
+                onChange={v => updateExtracted('primaryProteins', v)}
+              />
+              <ArrayField
+                label="Diet Tags"
+                hint="grain_free or with_grains, plus limited_ingredient"
+                values={current.extracted.dietTags || []}
+                onChange={v => updateExtracted('dietTags', v)}
+              />
             </div>
           </div>
 
@@ -242,7 +254,7 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
   );
 }
 
-function ArrayField({ label, values, onChange }: { label: string; values: string[]; onChange: (v: string[]) => void }) {
+function ArrayField({ label, hint, values, onChange }: { label: string; hint?: string; values: string[]; onChange: (v: string[]) => void }) {
   const [text, setText] = useState((values || []).join(', '));
   const prevId = useRef(values);
   if (values !== prevId.current) {
@@ -255,6 +267,7 @@ function ArrayField({ label, values, onChange }: { label: string; values: string
       <input
         type="text"
         value={text}
+        placeholder={hint}
         onChange={e => setText(e.target.value)}
         onBlur={() => onChange(text.split(',').map(s => s.trim()).filter(Boolean))}
         style={styles.input}
