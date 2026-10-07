@@ -223,25 +223,39 @@ class ImageService {
   }
 
   /**
-   * Upload image buffer to Cloudflare R2
+   * Upload image buffer to Cloudflare R2.
+   * Display images are resized to 800px and a 200px thumb is written in the same request.
+   * Pass skipResize/skipThumb for debug/raw uploads (e.g. panoramas).
    * @returns {string} Public URL
    */
-  async uploadToR2(buffer, key, contentType) {
+  async uploadToR2(buffer, key, contentType, options = {}) {
+    const { skipResize = false, skipThumb = false } = options;
     try {
+      let uploadBuffer = buffer;
+      let uploadType = contentType || 'image/jpeg';
+
+      if (!skipResize) {
+        uploadBuffer = await sharp(buffer)
+          .rotate()
+          .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 85 })
+          .toBuffer();
+        uploadType = 'image/jpeg';
+      }
+
       await this.r2Client.send(new PutObjectCommand({
         Bucket: this.r2BucketName,
         Key: key,
-        Body: buffer,
-        ContentType: contentType,
+        Body: uploadBuffer,
+        ContentType: uploadType,
       }));
 
       const publicUrl = `${this.r2PublicUrl}/${key}`;
-      console.log(`☁️  [R2] Uploaded: ${publicUrl} (${(buffer.length / 1024).toFixed(1)}KB)`);
+      console.log(`☁️  [R2] Uploaded: ${publicUrl} (${(uploadBuffer.length / 1024).toFixed(1)}KB)`);
 
-      // Auto-generate thumbnail
-      this._generateThumb(buffer, key).catch(e =>
-        console.warn(`⚠️  [R2] Thumb generation failed for ${key}:`, e.message)
-      );
+      if (!skipThumb) {
+        await this._generateThumb(uploadBuffer, key);
+      }
 
       return publicUrl;
     } catch (error) {
@@ -337,7 +351,7 @@ class ImageService {
 
     let publicUrl = null;
     if (this.r2Client && this.r2BucketName) {
-      publicUrl = await this.uploadToR2(buffer, r2Key, 'image/jpeg');
+      publicUrl = await this.uploadToR2(buffer, r2Key, 'image/jpeg', { skipResize: true, skipThumb: true });
     } else {
       console.warn('[Panorama] R2 not configured — skipped upload');
     }
