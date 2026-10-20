@@ -85,6 +85,7 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: current.id,
+          lookupId: current.lookupId,
           extracted: current.extracted,
           ingredients: current.ingredients,
           barcode: current.barcode,
@@ -93,7 +94,11 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
       });
       const data = await res.json();
       if (data.success) {
-        onSaved();
+        if (data.failed) {
+          alert('No ingredients, so this request was marked failed. The pet owner will be notified.');
+        } else {
+          onSaved();
+        }
         goNext();
       } else {
         alert(`Save failed: ${data.error}`);
@@ -108,7 +113,7 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
     await fetch('/api/batch/skip', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: current.id }),
+      body: JSON.stringify({ id: current.id, lookupId: current.lookupId }),
     });
     goNext();
   };
@@ -131,15 +136,35 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
         <h2 style={{ fontSize: 18 }}>
           Review Product {currentIdx + 1} / {queue.length}
         </h2>
-        <button onClick={onDone} style={styles.backBtn}>Back to Upload</button>
+        <button
+          onClick={async () => {
+            if (current.lookupId) {
+              await fetch('/api/batch/skip', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: current.id, lookupId: current.lookupId }),
+              });
+            }
+            onDone();
+          }}
+          style={styles.backBtn}
+        >
+          {current.lookupId ? 'Back to requests' : 'Back to Upload'}
+        </button>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
         {/* Left: Images */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <ImageCard label="Front Label" src={current.images.front} />
-          <ImageCard label="Ingredients" src={current.images.ingredients} />
-          {current.images.barcode && <ImageCard label="Barcode" src={current.images.barcode} />}
+          {current.images.front ? <ImageCard label="Front Label" src={current.images.front} /> : null}
+          {current.images.ingredients ? <ImageCard label="Ingredients" src={current.images.ingredients} /> : null}
+          {current.images.barcode ? <ImageCard label="Barcode" src={current.images.barcode} /> : null}
+          {current.sourceUrl ? (
+            <p style={{ fontSize: 13, color: '#5C6B66', wordBreak: 'break-all' }}>Source: {current.sourceUrl}</p>
+          ) : null}
+          {current.warning ? (
+            <p style={{ fontSize: 13, color: '#9a3412' }}>{current.warning}</p>
+          ) : null}
         </div>
 
         {/* Right: Extracted data */}

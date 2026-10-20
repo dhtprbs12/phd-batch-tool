@@ -29,6 +29,7 @@ const productService = require('./services/productService');
 const imageService = require('./services/imageService');
 const { query } = require('./services/connection');
 const { decodeBarcode } = require('./barcodeDecoder');
+const lookupQueue = require('./lookupQueue');
 
 const router = express.Router();
 
@@ -311,19 +312,42 @@ router.get('/ingredients/suggest', async (req, res) => {
   }
 });
 
-/**
- * POST /api/batch/save
- * Save a reviewed product to the production DB
- */
+router.get('/requests', async (req, res) => {
+  try {
+    const requests = await lookupQueue.listRequests();
+    res.json({ total: requests.length, requests });
+  } catch (e) {
+    console.error('❌ Request list error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/requests/:id/open', async (req, res) => {
+  try {
+    const opened = await lookupQueue.openRequest(req.params.id, req.body?.url || null);
+    res.json(opened);
+  } catch (e) {
+    console.error('❌ Open request error:', e);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
 router.post('/save', async (req, res) => {
   try {
-    const { id, extracted, ingredients, barcode, extraBarcodes } = req.body;
+    const { id, extracted, ingredients, barcode, extraBarcodes, lookupId } = req.body;
+    const ingredientsList = (ingredients || []).map(s => String(s).trim()).filter(Boolean);
 
-    if (!extracted || !ingredients || ingredients.length === 0) {
+    if (lookupId && ingredientsList.length === 0) {
+      await lookupQueue.fail(lookupId);
+      const queueIdx = pendingQueue.findIndex(p => p.id === id);
+      if (queueIdx >= 0) pendingQueue[queueIdx].status = 'failed';
+      return res.json({ success: true, failed: true });
+    }
+
+    if (!extracted || ingredientsList.length === 0) {
       return res.status(400).json({ error: 'extracted data and ingredients are required' });
     }
 
-    const ingredientsList = ingredients.map(s => String(s).trim()).filter(Boolean);
     const rawText = ingredientsList.join(', ');
 
     // Build slots and match fields
@@ -481,6 +505,15 @@ router.post('/save', async (req, res) => {
     }
 
     // Remove from pending queue
+    if (lookupId) {
+      await lookupQueue.complete(
+        lookupId,
+        product.id,
+        extracted.brand || null,
+        extracted.productName || extracted.lineName || null,
+      );
+    }
+
     const queueIdx = pendingQueue.findIndex(p => p.id === id);
     if (queueIdx >= 0) pendingQueue[queueIdx].status = 'saved';
 
@@ -499,11 +532,17 @@ router.post('/save', async (req, res) => {
  * POST /api/batch/skip
  * Mark a queue item as skipped
  */
-router.post('/skip', (req, res) => {
-  const { id } = req.body;
-  const item = pendingQueue.find(p => p.id === id);
-  if (item) item.status = 'skipped';
-  res.json({ success: true });
+router.post('/skip', async (req, res) => {
+  try {
+    const { id, lookupId } = req.body;
+    const item = pendingQueue.find(p => p.id === id);
+    if (item) item.status = 'skipped';
+    if (lookupId) await lookupQueue.requeue(lookupId);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('❌ Skip error:', e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Helper: update ingredient dictionary table
