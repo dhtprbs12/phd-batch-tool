@@ -58,6 +58,17 @@ export default function UploadStep({ onProcessed }: Props) {
     ));
   };
 
+  const replacePhoto = (groupIdx: number, slot: 'front' | 'ingredients' | 'barcode' | number, file: File) => {
+    setGroups(g => g.map((group, i) => {
+      if (i !== groupIdx) return group;
+      if (slot === 'front') return { ...group, front: file };
+      if (slot === 'ingredients') return { ...group, ingredients: file };
+      if (slot === 'barcode') return { ...group, barcode: file };
+      const extraBarcodes = group.extraBarcodes.map((item, j) => j === slot ? file : item);
+      return { ...group, extraBarcodes };
+    }));
+  };
+
   const removeExtraBarcode = (groupIdx: number, barcodeIdx: number) => {
     setGroups(g => g.map((group, i) =>
       i === groupIdx
@@ -141,14 +152,14 @@ export default function UploadStep({ onProcessed }: Props) {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <Thumb file={group.front} label="Front" />
-                  <Thumb file={group.ingredients} label="Ingredients" />
-                  {group.barcode ? <Thumb file={group.barcode} label="Barcode" /> : (
+                  <Thumb file={group.front} label="Front" onRotate={(file) => replacePhoto(idx, 'front', file)} />
+                  <Thumb file={group.ingredients} label="Ingredients" onRotate={(file) => replacePhoto(idx, 'ingredients', file)} />
+                  {group.barcode ? <Thumb file={group.barcode} label="Barcode" onRotate={(file) => replacePhoto(idx, 'barcode', file)} /> : (
                     <div style={styles.noBarcode}>No barcode</div>
                   )}
                   {group.extraBarcodes.map((f, bi) => (
                     <div key={bi} style={{ position: 'relative' }}>
-                      <Thumb file={f} label={`+Barcode ${bi + 1}`} />
+                      <Thumb file={f} label={`+Barcode ${bi + 1}`} onRotate={(file) => replacePhoto(idx, bi, file)} />
                       <button
                         onClick={() => removeExtraBarcode(idx, bi)}
                         style={styles.extraBarcodeRemove}
@@ -173,22 +184,70 @@ export default function UploadStep({ onProcessed }: Props) {
   );
 }
 
-function Thumb({ file, label }: { file: File; label: string }) {
+function Thumb({ file, label, onRotate }: { file: File; label: string; onRotate: (file: File) => void }) {
   const [broken, setBroken] = useState(false);
+  const [turning, setTurning] = useState(false);
   const url = URL.createObjectURL(file);
+  const rotate = async () => {
+    setTurning(true);
+    try {
+      onRotate(await rotateClockwise(file));
+    } catch {
+      setBroken(true);
+    } finally {
+      setTurning(false);
+    }
+  };
   return (
     <div style={styles.thumb}>
       {broken ? (
         <div style={{ width: 70, height: 70, background: '#f0f0f0', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#999', textAlign: 'center' as const }}>
-          📷<br />HEIC
+          HEIC
         </div>
       ) : (
         <img src={url} onError={() => setBroken(true)} style={{ width: 70, height: 70, objectFit: 'cover', borderRadius: 6 }} />
       )}
       <span style={{ fontSize: 10, color: '#888', marginTop: 2 }}>{label}</span>
-      <span style={{ fontSize: 9, color: '#bbb', marginTop: 1, maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+      <button type="button" onClick={rotate} disabled={turning || broken} style={styles.rotateBtn}>
+        {turning ? '...' : 'Rotate'}
+      </button>
     </div>
   );
+}
+
+function rotateClockwise(file: File) {
+  return new Promise<File>((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.height;
+      canvas.height = img.width;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        URL.revokeObjectURL(url);
+        reject(new Error('Could not rotate this photo'));
+        return;
+      }
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      canvas.toBlob((blob) => {
+        URL.revokeObjectURL(url);
+        if (!blob) {
+          reject(new Error('Could not rotate this photo'));
+          return;
+        }
+        const name = file.name.replace(/\.\w+$/, '') + '.jpg';
+        resolve(new File([blob], name, { type: 'image/jpeg' }));
+      }, 'image/jpeg', 0.92);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Could not rotate this photo'));
+    };
+    img.src = url;
+  });
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -223,6 +282,16 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     fontSize: 10,
     color: '#aaa',
+  },
+  rotateBtn: {
+    marginTop: 4,
+    background: 'none',
+    border: '1px solid #ccc',
+    color: '#5C6B66',
+    fontSize: 10,
+    borderRadius: 4,
+    padding: '2px 6px',
+    cursor: 'pointer',
   },
   removeBtn: {
     background: 'none',

@@ -255,15 +255,22 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
 
 function ImageCard({ label, src }: { label: string; src: string }) {
   const [zoomed, setZoomed] = useState(false);
+  const [turns, setTurns] = useState(0);
+  const rotation = { transform: `rotate(${turns * 90}deg)` };
   return (
     <>
-      <div style={styles.imageCard} onClick={() => setZoomed(true)}>
-        <img src={src} style={{ width: '100%', maxHeight: 220, objectFit: 'contain', borderRadius: 8 }} />
-        <p style={{ fontSize: 12, color: '#888', textAlign: 'center', marginTop: 4 }}>{label}</p>
+      <div style={styles.imageCard}>
+        <div onClick={() => setZoomed(true)} style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <img src={src} style={{ width: '100%', maxHeight: 220, objectFit: 'contain', borderRadius: 8, ...rotation }} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+          <p style={{ fontSize: 12, color: '#888', margin: 0 }}>{label}</p>
+          <button type="button" onClick={() => setTurns(value => value + 1)} style={styles.rotateBtn}>Rotate</button>
+        </div>
       </div>
       {zoomed && (
         <div style={styles.zoomOverlay} onClick={() => setZoomed(false)}>
-          <img src={src} style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain' }} />
+          <img src={src} style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', ...rotation }} />
         </div>
       )}
     </>
@@ -356,6 +363,15 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     fontWeight: 600,
     fontSize: 14,
+  },
+  rotateBtn: {
+    background: 'none',
+    border: '1px solid #ccc',
+    color: '#5C6B66',
+    fontSize: 11,
+    borderRadius: 4,
+    padding: '2px 8px',
+    cursor: 'pointer',
   },
   backBtn: {
     background: 'none',
