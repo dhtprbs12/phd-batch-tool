@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const nodemailer = require('nodemailer');
 const { query } = require('./services/connection');
 const geminiService = require('./services/geminiService');
 const { decodeBarcode } = require('./barcodeDecoder');
@@ -316,28 +317,88 @@ async function sendExpoPush(token, body, data) {
   if (!res.ok) console.warn('[Lookup] push failed:', res.status, (await res.text()).slice(0, 200));
 }
 
-async function sendEmail(to, body) {
-  const key = process.env.RESEND_API_KEY;
-  if (!to) return;
-  if (!key) {
-    console.log(`[Lookup] email skipped (no RESEND_API_KEY) to=${to} body="${body}"`);
-    return;
-  }
-  const from = process.env.LOOKUP_EMAIL_FROM || 'PHD <reports@phd.app>';
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      from,
-      to: [to],
-      subject: body,
-      text: `${body}\n\nOpen PHD and go to History → Analysis requests.`,
-    }),
-  });
-  if (!res.ok) console.warn('[Lookup] email failed:', res.status, (await res.text()).slice(0, 200));
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
-async function notify(row, message) {
+function foodLabel(brand, name, fallback) {
+  const brandText = String(brand || '').trim();
+  const nameText = String(name || '').trim();
+  if (brandText && nameText) {
+    if (nameText.toLowerCase().startsWith(brandText.toLowerCase())) return nameText;
+    return `${brandText} ${nameText}`;
+  }
+  return nameText || brandText || fallback;
+}
+
+function renderEmail({ headline, paragraphs }) {
+  const footer = 'You received this email because you requested a product analysis in PHD.';
+  const text = [headline, '', ...paragraphs, '', 'PHD', '', footer].join('\n');
+  const body = paragraphs
+    .map((paragraph) => `<p style="margin:0 0 16px;font-size:16px;line-height:1.55;color:#1c1c1c;">${escapeHtml(paragraph)}</p>`)
+    .join('');
+  const html = `<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f4f5f3;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f3;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e3e6e1;">
+          <tr><td style="height:4px;background:#2D6A4F;font-size:0;line-height:0;">&nbsp;</td></tr>
+          <tr>
+            <td style="padding:28px 32px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;letter-spacing:0.16em;font-weight:600;color:#2D6A4F;">PHD</td>
+          </tr>
+          <tr>
+            <td style="padding:14px 32px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:22px;line-height:1.35;font-weight:600;color:#14221b;">${escapeHtml(headline)}</td>
+          </tr>
+          <tr>
+            <td style="padding:16px 32px 8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">${body}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 32px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.4;color:#5c675f;">PHD</td>
+          </tr>
+        </table>
+        <p style="max-width:560px;margin:14px auto 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;color:#7a847c;">${escapeHtml(footer)}</p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+  return { text, html };
+}
+
+async function sendEmail(to, message) {
+  if (!to) return;
+  const user = String(process.env.GMAIL_USER || '').trim();
+  const pass = String(process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+  if (!user || !pass) {
+    console.log(`[Lookup] email skipped (no Gmail config) to=${to} subject="${message.subject}"`);
+    return;
+  }
+  try {
+    const transport = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: { user, pass },
+    });
+    await transport.sendMail({
+      from: `PHD <${user}>`,
+      to,
+      subject: message.subject,
+      text: message.text,
+      html: message.html,
+    });
+  } catch (error) {
+    console.warn('[Lookup] email failed:', error.message);
+  }
+}
+
+async function notify(row, notice) {
   const [fresh] = await query(
     'SELECT client_acked_at, notify_push, email_to, user_id FROM lookup_requests WHERE id = ?',
     [row.id],
@@ -345,9 +406,12 @@ async function notify(row, message) {
   if (!fresh || fresh.client_acked_at) return;
   if (fresh.notify_push) {
     const [user] = await query('SELECT expo_push_token FROM users WHERE id = ?', [fresh.user_id]);
-    if (user?.expo_push_token) await sendExpoPush(user.expo_push_token, message, { lookupId: row.id });
+    if (user?.expo_push_token) await sendExpoPush(user.expo_push_token, notice.push, { lookupId: row.id });
   }
-  if (fresh.email_to) await sendEmail(fresh.email_to, message);
+  if (fresh.email_to) {
+    const rendered = renderEmail({ headline: notice.headline, paragraphs: notice.paragraphs });
+    await sendEmail(fresh.email_to, { subject: notice.subject, ...rendered });
+  }
 }
 
 async function awardOnce(row, amount) {
@@ -394,8 +458,16 @@ async function complete(id, productId, brand, productName) {
   const amount = row.entry === 'photo' ? 20 : 10;
   await awardOnce(row, amount);
   const petName = row.pet_name || 'your pet';
-  const food = productName || row.query_name || 'your food';
-  await notify(row, `${petName}'s analysis for ${food} is ready.`);
+  const food = foodLabel(brand || row.brand, productName || row.query_name, 'this food');
+  await notify(row, {
+    push: `${petName}'s analysis for ${food} is ready.`,
+    subject: `${petName}'s report is ready`,
+    headline: `${petName}'s report is ready`,
+    paragraphs: [
+      `The analysis for ${food} is finished.`,
+      'Open PHD and go to History → Analysis requests.',
+    ],
+  });
 }
 
 async function fail(id) {
@@ -411,11 +483,27 @@ async function fail(id) {
     `UPDATE lookup_requests SET status = 'failed', failure_reason = ? WHERE id = ?`,
     [reason, id],
   );
-  const name = row.query_name || 'this food';
-  const message = reason === 'unreadable_photo'
-    ? "We couldn't read the ingredient panel. Photograph it again."
-    : `We couldn't find a published ingredient panel for ${name}. Check the spelling, or add a product page link.`;
-  await notify(row, message);
+  const food = foodLabel(row.brand, row.query_name, 'this food');
+  const notice = reason === 'unreadable_photo'
+    ? {
+      push: "We couldn't read the ingredient panel. Photograph it again.",
+      subject: 'Please photograph the ingredient panel again',
+      headline: "We couldn't read the ingredient panel",
+      paragraphs: [
+        `The photos for ${food} didn't show a readable ingredient list.`,
+        'Open PHD and send a new request with a clearer photo of the panel.',
+      ],
+    }
+    : {
+      push: `We couldn't find a published ingredient panel for ${food}. Check the spelling, or add a product page link.`,
+      subject: `We couldn't find ${food}`,
+      headline: "We couldn't find this product",
+      paragraphs: [
+        `We couldn't find a published ingredient panel for ${food}.`,
+        'Check the spelling, or include a product page link when you send the request again.',
+      ],
+    };
+  await notify(row, notice);
 }
 
 module.exports = { listRequests, openRequest, requeue, complete, fail };
