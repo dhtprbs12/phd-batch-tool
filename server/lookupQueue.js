@@ -358,7 +358,7 @@ async function awardOnce(row, amount) {
       uuidv4(),
       row.user_id,
       amount,
-      'on_demand_lookup',
+      'product_register',
       row.id,
       amount === 20 ? 'Food photos analyzed 🦴×20' : 'Food lookup ready 🦴×10',
     ],
@@ -380,14 +380,17 @@ async function complete(id, productId, brand, productName) {
     error.status = 404;
     throw error;
   }
-  if (row.status === 'ready' && row.product_id) return;
-  await query(
-    `UPDATE lookup_requests
-     SET status = 'ready', failure_reason = NULL, product_id = ?,
-         brand = COALESCE(brand, ?), query_name = COALESCE(query_name, ?)
-     WHERE id = ?`,
-    [productId, brand || null, productName || null, id],
-  );
+  const alreadyFinished = row.status === 'ready' && row.product_id && Number(row.tokens_awarded) > 0;
+  if (alreadyFinished) return;
+  if (!(row.status === 'ready' && row.product_id)) {
+    await query(
+      `UPDATE lookup_requests
+       SET status = 'ready', failure_reason = NULL, product_id = ?,
+           brand = COALESCE(brand, ?), query_name = COALESCE(query_name, ?)
+       WHERE id = ?`,
+      [productId, brand || null, productName || null, id],
+    );
+  }
   const amount = row.entry === 'photo' ? 20 : 10;
   await awardOnce(row, amount);
   const petName = row.pet_name || 'your pet';

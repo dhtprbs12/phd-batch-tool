@@ -337,6 +337,22 @@ router.post('/save', async (req, res) => {
     const { id, extracted, ingredients, barcode, extraBarcodes, lookupId } = req.body;
     const ingredientsList = (ingredients || []).map(s => String(s).trim()).filter(Boolean);
 
+    if (lookupId) {
+      const [existingLookup] = await query(
+        'SELECT status, product_id FROM lookup_requests WHERE id = ?',
+        [lookupId],
+      );
+      if (existingLookup?.status === 'ready' && existingLookup.product_id) {
+        await lookupQueue.complete(
+          lookupId,
+          existingLookup.product_id,
+          extracted?.brand || null,
+          extracted?.productName || extracted?.lineName || null,
+        );
+        return res.json({ success: true, product: { id: existingLookup.product_id } });
+      }
+    }
+
     if (lookupId && ingredientsList.length === 0) {
       await lookupQueue.fail(lookupId);
       const queueIdx = pendingQueue.findIndex(p => p.id === id);
