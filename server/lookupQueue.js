@@ -445,6 +445,13 @@ async function complete(id, productId, brand, productName) {
     throw error;
   }
   const alreadyFinished = row.status === 'ready' && row.product_id && Number(row.tokens_awarded) > 0;
+  if (row.pet_food_id && productId) {
+    const linkedName = String(productName || row.query_name || 'Pet food').trim().slice(0, 300);
+    await query(
+      'UPDATE pet_foods SET product_id = ?, product_name = ? WHERE id = ?',
+      [productId, linkedName, row.pet_food_id],
+    );
+  }
   if (alreadyFinished) return;
   if (!(row.status === 'ready' && row.product_id)) {
     await query(
@@ -460,7 +467,7 @@ async function complete(id, productId, brand, productName) {
   const petName = row.pet_name || 'your pet';
   const food = foodLabel(brand || row.brand, productName || row.query_name, 'this food');
   await notify(row, {
-    push: `${petName}'s analysis for ${food} is ready.`,
+    push: `${petName}'s analysis request is ready.`,
     subject: `${petName}'s report is ready`,
     headline: `${petName}'s report is ready`,
     paragraphs: [
