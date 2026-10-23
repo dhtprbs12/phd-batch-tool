@@ -10,6 +10,79 @@ function cleanR2Env(value) {
   return String(value).trim().replace(/^\uFEFF/, '');
 }
 
+const IMAGE_NAME_DROPPED = new Set(['real', 'recipe', 'recipes', 'formula']);
+const IMAGE_LINE_WORDS = new Set([
+  'whole', 'grain', 'free', 'raw', 'boost', 'kibble', 'dry', 'wet', 'natural', 'original', 'plus',
+]);
+
+function looseImageQueries(brand, productName) {
+  const text = `${brand || ''} ${productName || ''}`
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([A-Za-z])\+/g, '$1 ')
+    .replace(/&/g, ' ')
+    .replace(/[-_/]+/g, ' ')
+    .replace(/wholegrain/ig, 'whole grain')
+    .replace(/grainfree/ig, 'grain free');
+
+  const words = [];
+  for (const word of text.split(/[^A-Za-z0-9]+/)) {
+    if (!word || IMAGE_NAME_DROPPED.has(word.toLowerCase())) continue;
+    if (words.length && words[words.length - 1].toLowerCase() === word.toLowerCase()) continue;
+    words.push(word);
+  }
+
+  const brandWords = new Set(String(brand || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+  if (!words.some((word) => !brandWords.has(word.toLowerCase()))) return [];
+
+  const queries = [];
+  const add = (list) => {
+    const q = list.join(' ').replace(/\s+/g, ' ').trim();
+    if (q && !queries.includes(q)) queries.push(q);
+  };
+  add(words);
+  add(withoutLinePhrases(words));
+  return queries;
+}
+
+function withoutLinePhrases(words) {
+  const out = [];
+  for (let i = 0; i < words.length; i += 1) {
+    const a = words[i].toLowerCase();
+    const b = (words[i + 1] || '').toLowerCase();
+    if ((a === 'whole' && b === 'grain') || (a === 'grain' && b === 'free')) {
+      i += 1;
+      continue;
+    }
+    out.push(words[i]);
+  }
+  return out;
+}
+
+function flavorTokens(brand, productName) {
+  const text = String(productName || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([A-Za-z])\+/g, '$1 ')
+    .replace(/&/g, ' ')
+    .replace(/[-_/]+/g, ' ')
+    .replace(/wholegrain/ig, 'whole grain')
+    .replace(/grainfree/ig, 'grain free');
+  const brandWords = new Set(String(brand || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+  const tokens = [];
+  for (const word of text.split(/[^A-Za-z0-9]+/)) {
+    const lower = word.toLowerCase();
+    if (word.length < 3) continue;
+    if (IMAGE_NAME_DROPPED.has(lower) || IMAGE_LINE_WORDS.has(lower) || brandWords.has(lower)) continue;
+    if (!tokens.includes(lower)) tokens.push(lower);
+  }
+  return tokens;
+}
+
+function titleHasFlavor(title, tokens) {
+  if (!tokens.length) return true;
+  const hay = String(title || '').toLowerCase();
+  return tokens.every((token) => hay.includes(token));
+}
+
 /**
  * IMAGE SERVICE
  * 
@@ -101,43 +174,64 @@ class ImageService {
     ];
 
     for (const searchQuery of queries) {
-      const url = `https://serpapi.com/search.json?` +
-        `api_key=${this.serpApiKey}&` +
-        `engine=google_images&` +
-        `q=${encodeURIComponent(searchQuery)}&` +
-        `num=3`;
+      const found = await this.serpImageQuery(searchQuery);
+      if (found) return found;
+    }
 
-      try {
-        console.log(`🔍 [SerpAPI] Searching: "${searchQuery}"`);
-        const response = await fetch(url, {
-          signal: AbortSignal.timeout(10000)
-        });
-
-        if (!response.ok) {
-          const errText = await response.text().catch(() => '');
-          console.error(`❌ [SerpAPI] HTTP ${response.status}: ${errText.slice(0, 200)}`);
-          continue;
-        }
-
-        const data = await response.json();
-
-        if (data.images_results && data.images_results.length > 0) {
-          const best = data.images_results.find(r =>
-            r.original && !r.original.includes('placeholder') && !r.original.includes('no-image')
-          ) || data.images_results[0];
-          if (best?.original) {
-            console.log(`✅ [SerpAPI] Found: ${best.original}`);
-            return best.original;
-          }
-        }
-
-        console.log(`⚠️ [SerpAPI] No results for: "${searchQuery}"`);
-      } catch (error) {
-        console.error(`❌ [SerpAPI] Error:`, error.message);
-      }
+    const flavors = flavorTokens(brand, productName);
+    for (const searchQuery of looseImageQueries(brand, productName)) {
+      const found = await this.serpImageQuery(searchQuery, flavors);
+      if (found) return found;
     }
 
     return null;
+  }
+
+  async serpImageQuery(searchQuery, flavors = null) {
+    if (!searchQuery) return null;
+    const url = `https://serpapi.com/search.json?` +
+      `api_key=${this.serpApiKey}&` +
+      `engine=google_images&` +
+      `q=${encodeURIComponent(searchQuery)}&` +
+      `num=3`;
+
+    try {
+      console.log(`🔍 [SerpAPI] Searching: "${searchQuery}"`);
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(10000)
+      });
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        console.error(`❌ [SerpAPI] HTTP ${response.status}: ${errText.slice(0, 200)}`);
+        return null;
+      }
+
+      const data = await response.json();
+      const images = Array.isArray(data.images_results) ? data.images_results : [];
+      const usable = images.filter((result) =>
+        result.original && !result.original.includes('placeholder') && !result.original.includes('no-image')
+      );
+      const best = flavors
+        ? usable.find((result) => titleHasFlavor(result.title, flavors))
+        : usable[0];
+      if (best?.original) {
+        console.log(`✅ [SerpAPI] Found: ${best.original}`);
+        return best.original;
+      }
+
+      if (flavors && usable.length > 0) {
+        console.log(`⚠️ [SerpAPI] No flavor match for: "${searchQuery}"`);
+        return null;
+      }
+
+      const why = data.error ? ` (${data.error})` : '';
+      console.log(`⚠️ [SerpAPI] No results for: "${searchQuery}"${why}`);
+      return null;
+    } catch (error) {
+      console.error(`❌ [SerpAPI] Error:`, error.message);
+      return null;
+    }
   }
 
   /**
