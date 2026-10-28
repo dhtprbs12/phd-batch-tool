@@ -182,7 +182,7 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
               <SelectField label="Breed Size" value={current.extracted.breedSize} options={['all', 'large_breed', 'small_breed']} onChange={v => updateExtracted('breedSize', v)} />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
-              <ArrayField
+              <ProteinField
                 label="Primary Proteins"
                 hint="Heaviest first. Comma separated. chicken, poultry, salmon, whitefish"
                 values={current.extracted.primaryProteins || []}
@@ -286,6 +286,100 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
   );
 }
 
+function proteinParts(text: string) {
+  const idx = text.lastIndexOf(',');
+  const prior = (idx === -1 ? [] : text.slice(0, idx).split(','))
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const fragment = (idx === -1 ? text : text.slice(idx + 1)).trim();
+  return { prior, fragment };
+}
+
+function ProteinField({ label, hint, values, onChange }: { label: string; hint?: string; values: string[]; onChange: (v: string[]) => void }) {
+  const [text, setText] = useState((values || []).join(', '));
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const prevValues = useRef(values);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const picking = useRef(false);
+  if (values !== prevValues.current) {
+    prevValues.current = values;
+    setText((values || []).join(', '));
+  }
+
+  const commit = (next: string) => {
+    onChange(next.split(',').map((part) => part.trim()).filter(Boolean));
+  };
+
+  const fetchSuggestions = (next: string) => {
+    const { prior, fragment } = proteinParts(next);
+    if (fragment.length < 1) {
+      setSuggestions([]);
+      return;
+    }
+    const params = new URLSearchParams({ q: fragment, exclude: prior.join(',') });
+    fetch(`/api/batch/proteins/suggest?${params}`)
+      .then((res) => res.json())
+      .then((data) => setSuggestions(Array.isArray(data) ? data : []))
+      .catch(() => setSuggestions([]));
+  };
+
+  const selectSuggestion = (suggestion: string) => {
+    const idx = text.lastIndexOf(',');
+    const head = idx === -1 ? '' : `${text.slice(0, idx).trimEnd()}, `;
+    const next = `${head}${suggestion}, `;
+    setText(next);
+    setSuggestions([]);
+  };
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <label style={{ fontSize: 11, color: '#888' }}>{label}</label>
+      <input
+        type="text"
+        value={text}
+        placeholder={hint}
+        onChange={(event) => {
+          const next = event.target.value;
+          setText(next);
+          if (debounceRef.current) clearTimeout(debounceRef.current);
+          debounceRef.current = setTimeout(() => fetchSuggestions(next), 150);
+        }}
+        onBlur={() => {
+          setTimeout(() => {
+            if (picking.current) {
+              picking.current = false;
+              return;
+            }
+            setSuggestions([]);
+            commit(text);
+          }, 150);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && suggestions.length > 0) {
+            event.preventDefault();
+            selectSuggestion(suggestions[0]);
+          }
+        }}
+        style={styles.input}
+      />
+      {suggestions.length > 0 ? (
+        <div style={styles.suggestBox}>
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion}
+              type="button"
+              onMouseDown={() => { picking.current = true; selectSuggestion(suggestion); }}
+              style={styles.suggestItem}
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ArrayField({ label, hint, values, onChange }: { label: string; hint?: string; values: string[]; onChange: (v: string[]) => void }) {
   const [text, setText] = useState((values || []).join(', '));
   const prevId = useRef(values);
@@ -342,6 +436,29 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #ddd',
     fontSize: 13,
     outline: 'none',
+  },
+  suggestBox: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    background: '#fff',
+    border: '1px solid #ddd',
+    borderRadius: 8,
+    boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+    zIndex: 20,
+    maxHeight: 180,
+    overflowY: 'auto',
+  },
+  suggestItem: {
+    display: 'block',
+    width: '100%',
+    textAlign: 'left',
+    background: '#fff',
+    border: 'none',
+    padding: '8px 10px',
+    fontSize: 13,
+    cursor: 'pointer',
   },
   saveBtn: {
     flex: 1,

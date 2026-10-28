@@ -54,7 +54,30 @@ function ingredientLines(extracted) {
   return cleaned;
 }
 
-function searchPrompt({ brand, name, url }) {
+function proteinHints(text) {
+  return String(text || '')
+    .split(/,|&|\band\b/i)
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+function foodSearchLine({ brand, name, protein, lifeStage, foodForm, url }) {
+  const details = [
+    brand ? `brand "${brand}"` : '',
+    name ? `product "${name}"` : '',
+    protein ? `protein "${protein}"` : '',
+    lifeStage ? `life stage "${lifeStage}"` : '',
+    foodForm ? `${foodForm} food` : '',
+  ].filter(Boolean).join(', ');
+  if (url) {
+    return `- Read only this URL: ${url}
+- It must be this food: ${details}. If the page is a different protein, life stage, or dry/wet form, extracted must be null.`;
+  }
+  return `- Find pages for this food only: ${details}. Do not use a different protein, life stage, or dry/wet form.`;
+}
+
+function searchPrompt({ brand, name, protein, lifeStage, foodForm, url }) {
   return `You look up one US pet food from pages that publish the label as text.
 Return ONLY JSON, no markdown:
 {
@@ -70,7 +93,7 @@ Rules:
 - Read ingredients from ONE page. If they are not written as text on that page, extracted must be null.
 - Never invent ingredients. Never mix two recipes. Never use reviews, Q&A, blogs, Reddit, or social posts.
 - ingredients are short noun phrases in label order.
-${url ? `- Read only this URL: ${url}` : `- Find pages for brand "${brand}" and product "${name}".`}
+${foodSearchLine({ brand, name, protein, lifeStage, foodForm, url })}
 If several different recipes match, return up to 3 candidates and extracted null.
 If one page clearly matches and has an ingredient list as text, fill extracted from that page only.`;
 }
@@ -96,8 +119,8 @@ async function grounded(prompt) {
   return parts.map((part) => part.text || '').join('\n');
 }
 
-async function findLabel({ brand, name, url }) {
-  const first = parseModelJson(await grounded(searchPrompt({ brand, name, url })));
+async function findLabel({ brand, name, protein, lifeStage, foodForm, url }) {
+  const first = parseModelJson(await grounded(searchPrompt({ brand, name, protein, lifeStage, foodForm, url })));
   const ingredients = ingredientLines(first.extracted);
   const candidates = (Array.isArray(first.candidates) ? first.candidates : [])
     .map((item) => {
@@ -128,10 +151,12 @@ async function findLabel({ brand, name, url }) {
 
 async function listRequests() {
   const rows = await query(
-    `SELECT id, pet_name, pet_type, brand, query_name, entry, status, created_at
-     FROM lookup_requests
-     WHERE status IN ('queued', 'searching')
-     ORDER BY created_at ASC`,
+    `SELECT lr.id, lr.pet_name, lr.pet_type, lr.brand, lr.query_name, lr.protein, lr.life_stage, lr.food_form,
+            lr.entry, lr.status, lr.created_at, pf.id AS current_food_id
+     FROM lookup_requests lr
+     LEFT JOIN pet_foods pf ON pf.id = lr.pet_food_id AND pf.is_current = TRUE
+     WHERE lr.status IN ('queued', 'searching')
+     ORDER BY (pf.id IS NOT NULL) DESC, lr.created_at ASC`,
   );
   return rows.map((row) => ({
     id: row.id,
@@ -139,9 +164,13 @@ async function listRequests() {
     petType: row.pet_type,
     brand: row.brand,
     queryName: row.query_name,
+    protein: row.protein,
+    lifeStage: row.life_stage,
+    foodForm: row.food_form,
     entry: row.entry,
     status: row.status,
     createdAt: row.created_at,
+    currentFood: !!row.current_food_id,
   }));
 }
 
@@ -186,10 +215,10 @@ function reviewBase(row) {
       brand: row.brand || null,
       lineName: null,
       productName: row.query_name || null,
-      lifeStage: 'all',
-      primaryProteins: [],
+      lifeStage: row.life_stage || 'all',
+      primaryProteins: proteinHints(row.protein),
       petType: row.pet_type === 'cat' ? 'cat' : 'dog',
-      productType: 'dry_food',
+      productType: row.food_form === 'wet' ? 'wet_food' : 'dry_food',
       texture: null,
       breedSize: 'all',
       dietTags: [],
@@ -275,7 +304,14 @@ async function openName(row, pageUrl) {
   const url = pageUrl || row.pasted_url || null;
   let found;
   try {
-    found = await findLabel({ brand: row.brand, name: row.query_name, url });
+    found = await findLabel({
+      brand: row.brand,
+      name: row.query_name,
+      protein: row.protein,
+      lifeStage: row.life_stage,
+      foodForm: row.food_form,
+      url,
+    });
   } catch (error) {
     console.warn('⚠️ Name search failed:', error.message);
     review.warning = error.message;

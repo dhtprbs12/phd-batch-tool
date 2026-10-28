@@ -259,6 +259,63 @@ router.get('/queue', (req, res) => {
   res.json(pendingQueue.filter(p => p.status === 'pending_review'));
 });
 
+let proteinCache = { at: 0, tokens: [] };
+
+async function proteinTokens() {
+  if (Date.now() - proteinCache.at < 60_000 && proteinCache.tokens.length) return proteinCache.tokens;
+  const rows = await query(
+    `SELECT primary_proteins FROM products WHERE primary_proteins IS NOT NULL AND primary_proteins <> ''`,
+  );
+  const counts = new Map();
+  for (const row of rows) {
+    String(row.primary_proteins).split(/[,+]/).forEach((part) => {
+      const token = part.trim().toLowerCase().replace(/\s+/g, '_');
+      if (!token) return;
+      counts.set(token, (counts.get(token) || 0) + 1);
+    });
+  }
+  const tokens = [...counts.entries()]
+    .map(([token, count]) => ({ token, count }))
+    .sort((a, b) => b.count - a.count || a.token.localeCompare(b.token));
+  proteinCache = { at: Date.now(), tokens };
+  return tokens;
+}
+
+function compactProtein(value) {
+  return String(value || '').toLowerCase().replace(/[\s_]+/g, '');
+}
+
+/**
+ * GET /api/batch/proteins/suggest?q=
+ * Suggest a protein already stored on a product. Matches the word being typed.
+ */
+router.get('/proteins/suggest', async (req, res) => {
+  try {
+    const raw = String(req.query.q || '').trim();
+    if (raw.length < 1) return res.json([]);
+    const needle = compactProtein(raw);
+    const exclude = new Set(
+      String(req.query.exclude || '')
+        .split(',')
+        .map((part) => compactProtein(part))
+        .filter(Boolean),
+    );
+    const tokens = await proteinTokens();
+    const prefix = [];
+    const contains = [];
+    for (const item of tokens) {
+      const compact = compactProtein(item.token);
+      if (!compact || exclude.has(compact)) continue;
+      if (compact.startsWith(needle)) prefix.push(item.token);
+      else if (compact.includes(needle)) contains.push(item.token);
+    }
+    res.json([...prefix, ...contains].slice(0, 8));
+  } catch (e) {
+    console.error('❌ Protein suggest error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /**
  * GET /api/batch/ingredients/suggest?q=
  * Same logic as app's /api/scan/ingredient-suggest

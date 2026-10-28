@@ -7,9 +7,13 @@ interface RequestRow {
   petType: string;
   brand: string | null;
   queryName: string | null;
+  protein?: string | null;
+  lifeStage?: string | null;
+  foodForm?: string | null;
   entry: 'name' | 'photo';
   status: string;
   createdAt: string;
+  currentFood?: boolean;
 }
 
 interface Candidate {
@@ -110,12 +114,15 @@ export default function RequestsStep({ onProcessed, onTotal }: Props) {
         </thead>
         <tbody>
           {rows.map((row) => {
-            const title = [row.brand, row.queryName].filter(Boolean).join(' · ')
+            const title = [row.brand, row.queryName, row.protein, row.lifeStage, row.foodForm].filter(Boolean).join(' · ')
               || (row.entry === 'photo' ? 'Front, ingredients, barcode' : 'Name request');
             return (
               <tr key={row.id}>
                 <td style={td}>{waitingLabel(row.createdAt)}</td>
-                <td style={td}>{row.petName || 'Pet'} · {row.petType}</td>
+                <td style={td}>
+                  {row.petName || 'Pet'} · {row.petType}
+                  {row.currentFood ? <span style={currentBadge}>Current food</span> : null}
+                </td>
                 <td style={td}>{row.entry === 'photo' ? 'Photo' : 'Name'}</td>
                 <td style={td}>{title}</td>
                 <td style={{ ...td, textAlign: 'right' }}>
@@ -132,6 +139,16 @@ export default function RequestsStep({ onProcessed, onTotal }: Props) {
   );
 }
 
+const currentBadge: CSSProperties = {
+  display: 'inline-block',
+  marginLeft: 8,
+  padding: '2px 8px',
+  borderRadius: 999,
+  background: '#2D6A4F',
+  color: '#fff',
+  fontSize: 12,
+  fontWeight: 700,
+};
 const th: CSSProperties = {
   textAlign: 'left', fontWeight: 500, fontSize: 13, color: '#5C6B66',
   padding: '12px 8px', borderBottom: '1px solid #E8E4DD',
