@@ -435,14 +435,22 @@ async function sendEmail(to, message) {
 }
 
 async function notify(row, notice) {
+  console.log(`[Notify] lookup=${row.id} starting notification check`);
   const [fresh] = await query(
     'SELECT client_acked_at, notify_push, email_to, user_id FROM lookup_requests WHERE id = ?',
     [row.id],
   );
-  if (!fresh || fresh.client_acked_at) return;
+  if (!fresh) { console.log(`[Notify] lookup=${row.id} not found in DB`); return; }
+  if (fresh.client_acked_at) { console.log(`[Notify] lookup=${row.id} already acked, skipping`); return; }
+  console.log(`[Notify] lookup=${row.id} notify_push=${fresh.notify_push} email_to=${fresh.email_to || '(none)'} user_id=${fresh.user_id}`);
   if (fresh.notify_push) {
     const [user] = await query('SELECT expo_push_token FROM users WHERE id = ?', [fresh.user_id]);
-    if (user?.expo_push_token) await sendExpoPush(user.expo_push_token, notice.push, { lookupId: row.id });
+    if (user?.expo_push_token) {
+      console.log(`[Notify] lookup=${row.id} sending push to ${user.expo_push_token.slice(0, 30)}...`);
+      await sendExpoPush(user.expo_push_token, notice.push, { lookupId: row.id });
+    } else {
+      console.log(`[Notify] lookup=${row.id} NO expo_push_token for user=${fresh.user_id}`);
+    }
   }
   if (fresh.email_to) {
     const rendered = renderEmail({ headline: notice.headline, paragraphs: notice.paragraphs });
