@@ -151,8 +151,8 @@ async function findLabel({ brand, name, protein, lifeStage, foodForm, url }) {
 
 async function listRequests() {
   const rows = await query(
-    `SELECT lr.id, lr.pet_name, lr.pet_type, lr.brand, lr.query_name, lr.entry, lr.status, lr.created_at,
-            pf.id AS current_food_id
+    `SELECT lr.id, lr.pet_name, lr.pet_type, lr.brand, lr.query_name, lr.protein, lr.life_stage, lr.food_form,
+            lr.entry, lr.status, lr.created_at, pf.id AS current_food_id
      FROM lookup_requests lr
      LEFT JOIN pet_foods pf ON pf.id = lr.pet_food_id AND pf.is_current = TRUE
      WHERE lr.status IN ('queued', 'searching')
@@ -164,9 +164,9 @@ async function listRequests() {
     petType: row.pet_type,
     brand: row.brand,
     queryName: row.query_name,
-    protein: null,
-    lifeStage: null,
-    foodForm: null,
+    protein: row.protein,
+    lifeStage: row.life_stage,
+    foodForm: row.food_form,
     entry: row.entry,
     status: row.status,
     createdAt: row.created_at,
