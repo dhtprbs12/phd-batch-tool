@@ -12,7 +12,7 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [saving, setSaving] = useState(false);
   const [editedItems, setEditedItems] = useState<Map<string, ProductSet>>(
-    () => new Map(queue.map(q => [q.id, { ...q }]))
+    () => new Map(queue.map(q => [q.id, { ...q, extracted: { ...q.extracted } }]))
   );
 
   const current = editedItems.get(queue[currentIdx]?.id);
@@ -180,6 +180,17 @@ export default function ReviewStep({ queue, onSaved, onDone }: Props) {
               <SelectField label="Life Stage" value={current.extracted.lifeStage} options={['all', 'puppy', 'kitten', 'adult', 'senior', 'puppy_and_adult']} onChange={v => updateExtracted('lifeStage', v)} />
               <Field label="Product Type" value={current.extracted.productType} onChange={v => updateExtracted('productType', v)} />
               <SelectField label="Breed Size" value={current.extracted.breedSize} options={['all', 'large_breed', 'small_breed']} onChange={v => updateExtracted('breedSize', v)} />
+              <SelectField
+                label="Texture"
+                value={current.extracted.texture || 'dry'}
+                options={[
+                  { value: 'dry', label: 'dry (건식)' },
+                  { value: 'wet', label: 'wet (습식)' },
+                  { value: 'semi_moist', label: 'semi_moist' },
+                  { value: 'freeze_dried', label: 'freeze_dried' },
+                ]}
+                onChange={v => updateExtracted('texture', v)}
+              />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
               <ProteinField
@@ -277,7 +288,7 @@ function ImageCard({ label, src }: { label: string; src: string }) {
   );
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+export function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <div>
       <label style={{ fontSize: 11, color: '#888' }}>{label}</label>
@@ -295,7 +306,7 @@ function proteinParts(text: string) {
   return { prior, fragment };
 }
 
-function ProteinField({ label, hint, values, onChange }: { label: string; hint?: string; values: string[]; onChange: (v: string[]) => void }) {
+export function ProteinField({ label, hint, values, onChange }: { label: string; hint?: string; values: string[]; onChange: (v: string[]) => void }) {
   const [text, setText] = useState((values || []).join(', '));
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const prevValues = useRef(values);
@@ -380,7 +391,7 @@ function ProteinField({ label, hint, values, onChange }: { label: string; hint?:
   );
 }
 
-function ArrayField({ label, hint, values, onChange }: { label: string; hint?: string; values: string[]; onChange: (v: string[]) => void }) {
+export function ArrayField({ label, hint, values, onChange }: { label: string; hint?: string; values: string[]; onChange: (v: string[]) => void }) {
   const [text, setText] = useState((values || []).join(', '));
   const prevId = useRef(values);
   if (values !== prevId.current) {
@@ -402,13 +413,14 @@ function ArrayField({ label, hint, values, onChange }: { label: string; hint?: s
   );
 }
 
-function SelectField({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
+export function SelectField({ label, value, options, onChange }: { label: string; value: string; options: Array<string | { value: string; label: string }>; onChange: (v: string) => void }) {
+  const items = options.map(opt => (typeof opt === 'string' ? { value: opt, label: opt } : opt));
   return (
     <div>
       <label style={{ fontSize: 11, color: '#888' }}>{label}</label>
       <select value={value} onChange={e => onChange(e.target.value)} style={styles.input}>
-        {options.map(opt => (
-          <option key={opt} value={opt}>{opt}</option>
+        {items.map(opt => (
+          <option key={opt.value} value={opt.value}>{opt.label}</option>
         ))}
       </select>
     </div>

@@ -105,8 +105,10 @@ class GeminiService {
     await this.cacheResult(imageHash, extracted);
     const { ocrFullText: _omit, ...result } = extracted;
     result.rawOcrText = _omit || null;
+    return this._inferMissingSlots(result);
+  }
 
-    // Infer missing slots from available text (safety net for Gemini omissions)
+  _inferMissingSlots(result) {
     const slotInferText = [result.productName, result.lineName, result.rawOcrText]
       .filter(Boolean).join(' ').toLowerCase();
 

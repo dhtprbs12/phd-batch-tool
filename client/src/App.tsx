@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import UploadStep from './components/UploadStep';
 import ReviewStep from './components/ReviewStep';
+import ManualReview from './components/ManualReview';
 import RequestsStep from './components/RequestsStep';
 
 export interface ProductSet {
@@ -35,6 +36,7 @@ type WorkMode = 'import' | 'requests';
 export default function App() {
   const [mode, setMode] = useState<WorkMode>('import');
   const [reviewing, setReviewing] = useState(false);
+  const [manual, setManual] = useState(false);
   const [queue, setQueue] = useState<ProductSet[]>([]);
   const [savedCount, setSavedCount] = useState(0);
   const [requestTotal, setRequestTotal] = useState<number | null>(null);
@@ -48,12 +50,20 @@ export default function App() {
   }, [reviewing, mode]);
 
   const handleProcessed = (results: ProductSet[]) => {
+    setManual(false);
     setQueue(results);
+    setReviewing(true);
+  };
+
+  const handleManual = () => {
+    setQueue([]);
+    setManual(true);
     setReviewing(true);
   };
 
   const handleDone = () => {
     setQueue([]);
+    setManual(false);
     setReviewing(false);
   };
 
@@ -88,11 +98,14 @@ export default function App() {
         </div>
       </header>
 
-      {!reviewing && mode === 'import' && <UploadStep onProcessed={handleProcessed} />}
+      {!reviewing && mode === 'import' && <UploadStep onProcessed={handleProcessed} onManual={handleManual} />}
       {!reviewing && mode === 'requests' && (
         <RequestsStep onProcessed={handleProcessed} onTotal={setRequestTotal} />
       )}
-      {reviewing && (
+      {reviewing && manual && (
+        <ManualReview onSaved={() => setSavedCount(c => c + 1)} onDone={handleDone} />
+      )}
+      {reviewing && !manual && (
         <ReviewStep queue={queue} onSaved={() => setSavedCount(c => c + 1)} onDone={handleDone} />
       )}
     </div>

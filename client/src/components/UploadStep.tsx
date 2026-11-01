@@ -3,6 +3,7 @@ import type { ProductSet } from '../App';
 
 interface Props {
   onProcessed: (results: ProductSet[]) => void;
+  onManual: () => void;
 }
 
 interface FileGroup {
@@ -12,7 +13,7 @@ interface FileGroup {
   extraBarcodes: File[];
 }
 
-export default function UploadStep({ onProcessed }: Props) {
+export default function UploadStep({ onProcessed, onManual }: Props) {
   const [groups, setGroups] = useState<FileGroup[]>([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
@@ -131,9 +132,14 @@ export default function UploadStep({ onProcessed }: Props) {
         style={{ display: 'none' }}
         onChange={handleBarcodeFilesSelected}
       />
-      <button onClick={() => fileInputRef.current?.click()} style={styles.selectBtn}>
-        Select Photos
-      </button>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button onClick={() => fileInputRef.current?.click()} style={styles.selectBtn}>
+          Select Photos
+        </button>
+        <button type="button" onClick={onManual} style={styles.manualBtn}>
+          Manual Input
+        </button>
+      </div>
 
       {/* Preview groups */}
       {groups.length > 0 && (
@@ -255,6 +261,16 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#2e7d56',
     color: '#fff',
     border: 'none',
+    padding: '12px 28px',
+    borderRadius: 8,
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontSize: 15,
+  },
+  manualBtn: {
+    background: '#fff',
+    color: '#2e7d56',
+    border: '1px solid #2e7d56',
     padding: '12px 28px',
     borderRadius: 8,
     cursor: 'pointer',
