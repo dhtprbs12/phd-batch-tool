@@ -3,7 +3,7 @@ import type { ProductSet } from '../App';
 import IngredientEditor from './IngredientEditor';
 import { ArrayField, Field, ProteinField, SelectField } from './ReviewStep';
 
-const MAX_PRODUCTS = 10;
+const MAX_PRODUCTS = 20;
 
 const TEXTURE_OPTIONS = [
   { value: 'dry', label: 'dry (건식)' },
